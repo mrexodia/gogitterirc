@@ -88,8 +88,11 @@ func goGitterIrcTelegram(conf Config) {
 		ircCon.ClearCallback("JOIN")
 	})
 	ircCon.AddCallback("PRIVMSG", func(e *irc.Event) {
+		// strip mIRC color codes
+                re := regexp.MustCompile("\x1f|\x02|\x03(?:\\d{1,2}(?:,\\d{1,2})?)?")
+                msg := re.ReplaceAllString(e.Message(), "")
 		//construct/log message
-		ircMsg := fmt.Sprintf("<%v> %v", e.Nick, e.Message())
+		ircMsg := fmt.Sprintf("<%v> %v", e.Nick, msg)
 		fmt.Printf("[IRC] %v\n", ircMsg)
 		//send to Gitter
 		gitterCon.Privmsg(conf.Gitter.Channel, ircMsg)
