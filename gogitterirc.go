@@ -9,9 +9,11 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-telegram-bot-api/telegram-bot-api"
 	"github.com/jinzhu/configor"
+	"github.com/mattn/go-xmpp"
 	"github.com/thoj/go-ircevent"
 )
 
@@ -35,6 +37,13 @@ type Config struct {
 		Admins        string `required:"true"`
 		GroupId       string `default:"0"`
 		ImgurClientId string `default:""`
+	}
+	XMPP struct {
+		Server string `required:"true"`
+		Jid    string `required:"true"`
+		Pass   string `required:"true"`
+		Muc    string `required:"true"`
+		Nick   string `required:"true"`
 	}
 }
 
@@ -117,6 +126,30 @@ func gitterEscape(msg string) string {
 	return msg
 }
 
+func initXmppClient(conf Config) (*xmpp.Client, error) {
+	xmppOptions := xmpp.Options{Host: conf.XMPP.Server,
+		User:                         conf.XMPP.Jid,
+		Password:                     conf.XMPP.Pass,
+		InsecureAllowUnencryptedAuth: false,
+		NoTLS:                        true,
+		StartTLS:                     true,
+		Debug:                        false,
+		Status:                       "chat",
+		StatusMessage:                "https://github.com/mrexodia/gogitterirc",
+	}
+	xmppClient, err := xmppOptions.NewClient()
+	if err != nil {
+		fmt.Printf("[XMPP] Error creating client: %v...\n", err)
+		return nil, err
+	}
+	_, err = xmppClient.JoinMUCNoHistory(conf.XMPP.Muc, conf.XMPP.Nick)
+	if err != nil {
+		fmt.Printf("[XMPP] Error joining MUC: %v\n", err)
+		return nil, err
+	}
+	return xmppClient, nil
+}
+
 func goGitterIrcTelegram(conf Config) {
 	//IRC init
 	ircCon := irc.IRC(conf.IRC.Nick, conf.IRC.Nick)
@@ -149,6 +182,13 @@ func goGitterIrcTelegram(conf Config) {
 	}
 	fmt.Printf("[Telegram] GroupId: %v\n", groupId)
 
+	//XMPP init
+	xmppClient, err := initXmppClient(conf)
+	if err != nil {
+		return
+	}
+	defer xmppClient.Close()
+
 	//IRC loop
 	if err := ircCon.Connect(conf.IRC.Server); err != nil {
 		fmt.Printf("[IRC] Failed to connect to %v: %v...\n", conf.IRC.Server, err)
@@ -179,6 +219,8 @@ func goGitterIrcTelegram(conf Config) {
 		}
 		//send to Gitter
 		gitterCon.Privmsg(conf.Gitter.Channel, ircMsg)
+		//send to XMPP
+		xmppClient.Send(xmpp.Chat{Remote: conf.XMPP.Muc, Type: "groupchat", Text: ircMsg})
 	})
 	go ircCon.Loop()
 
@@ -222,8 +264,47 @@ func goGitterIrcTelegram(conf Config) {
 		}
 		//send to IRC
 		ircCon.Privmsg(conf.IRC.Channel, gitterMsg)
+		//send to XMPP
+		xmppClient.Send(xmpp.Chat{Remote: conf.XMPP.Muc, Type: "groupchat", Text: gitterMsg})
 	})
 	go gitterCon.Loop()
+
+	//XMPP loop
+	go func() {
+		remotePrefix := conf.XMPP.Muc + "/"
+		mucRemote := remotePrefix + conf.XMPP.Nick
+
+		for {
+			chat, err := xmppClient.Recv()
+			if err != nil {
+				fmt.Printf("[XMPP] Recv error %v, reconnecting every 3 seconds...\n", err)
+				xmppClient.Close()
+				for {
+					time.Sleep(3 * time.Second)
+					client, err := initXmppClient(conf)
+					if err == nil {
+						xmppClient = client
+						break
+					}
+				}
+			}
+			switch v := chat.(type) {
+			case xmpp.Chat:
+				if len(v.Text) > 0 && strings.HasPrefix(v.Remote, remotePrefix) && v.Remote != mucRemote {
+					nick := v.Remote[len(remotePrefix):]
+					fmt.Printf("[XMPP] <%s> %s\n", nick, v.Text)
+					//send to Telegram
+					if groupId != 0 {
+						bot.Send(tgbotapi.NewMessage(groupId, fmt.Sprintf("<%s> %s", nick, v.Text)))
+					}
+					//send to IRC
+					ircPrivMsg(ircCon, conf.IRC.Channel, nick, v.Text)
+					//send to Gitter
+					ircPrivMsg(gitterCon, conf.Gitter.Channel, nick, v.Text)
+				}
+			}
+		}
+	}()
 
 	//Telegram loop
 	for update := range updates {
@@ -282,6 +363,8 @@ func goGitterIrcTelegram(conf Config) {
 			ircPrivMsg(ircCon, conf.IRC.Channel, name, message.Text)
 			//send to Gitter
 			ircPrivMsg(gitterCon, conf.Gitter.Channel, name, message.Text)
+			//send to XMPP
+			xmppClient.Send(xmpp.Chat{Remote: conf.XMPP.Muc, Type: "groupchat", Text: message.Text})
 		} else {
 			fmt.Println("[Telegam] Use /start to start the bot...")
 		}
