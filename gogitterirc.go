@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -139,12 +140,12 @@ func initXmppClient(conf Config) (*xmpp.Client, error) {
 	}
 	xmppClient, err := xmppOptions.NewClient()
 	if err != nil {
-		fmt.Printf("[XMPP] Error creating client: %v...\n", err)
+		log.Printf("[XMPP] Error creating client: %v...\n", err)
 		return nil, err
 	}
 	_, err = xmppClient.JoinMUCNoHistory(conf.XMPP.Muc, conf.XMPP.Nick)
 	if err != nil {
-		fmt.Printf("[XMPP] Error joining MUC: %v\n", err)
+		log.Printf("[XMPP] Error joining MUC: %v\n", err)
 		return nil, err
 	}
 	return xmppClient, nil
@@ -164,23 +165,23 @@ func goGitterIrcTelegram(conf Config) {
 	//Telegram init
 	bot, err := tgbotapi.NewBotAPI(conf.Telegram.Token)
 	if err != nil {
-		fmt.Printf("[Telegram] Error in NewBotAPI: %v...\n", err)
+		log.Printf("[Telegram] Error in NewBotAPI: %v...\n", err)
 		return
 	}
-	fmt.Printf("[Telegram] Authorized on account %s\n", bot.Self.UserName)
+	log.Printf("[Telegram] Authorized on account %s\n", bot.Self.UserName)
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
 	updates, err := bot.GetUpdatesChan(u)
 	if err != nil {
-		fmt.Printf("[Telegram] Error in GetUpdatesChan: %v...\n", err)
+		log.Printf("[Telegram] Error in GetUpdatesChan: %v...\n", err)
 		return
 	}
 	groupId, err := strconv.ParseInt(conf.Telegram.GroupId, 10, 64)
 	if err != nil {
-		fmt.Printf("[Telegram] Error parsing GroupId: %v...\n", err)
+		log.Printf("[Telegram] Error parsing GroupId: %v...\n", err)
 		groupId = 0
 	}
-	fmt.Printf("[Telegram] GroupId: %v\n", groupId)
+	log.Printf("[Telegram] GroupId: %v\n", groupId)
 
 	//XMPP init
 	xmppClient, err := initXmppClient(conf)
@@ -191,7 +192,7 @@ func goGitterIrcTelegram(conf Config) {
 
 	//IRC loop
 	if err := ircCon.Connect(conf.IRC.Server); err != nil {
-		fmt.Printf("[IRC] Failed to connect to %v: %v...\n", conf.IRC.Server, err)
+		log.Printf("[IRC] Failed to connect to %v: %v...\n", conf.IRC.Server, err)
 		return
 	}
 	ircCon.AddCallback("001", func(e *irc.Event) {
@@ -202,7 +203,7 @@ func goGitterIrcTelegram(conf Config) {
 	})
 	ircCon.AddCallback("JOIN", func(e *irc.Event) {
 		//IRC welcome message
-		fmt.Printf("[IRC] Joined channel %v\n", conf.IRC.Channel)
+		log.Printf("[IRC] Joined channel %v\n", conf.IRC.Channel)
 		//ignore when other people join
 		ircCon.ClearCallback("JOIN")
 	})
@@ -212,7 +213,7 @@ func goGitterIrcTelegram(conf Config) {
 		msg := re.ReplaceAllString(e.Message(), "")
 		//construct/log message
 		ircMsg := fmt.Sprintf("<%v> %v", e.Nick, msg)
-		fmt.Printf("[IRC] %v\n", ircMsg)
+		log.Printf("[IRC] %v\n", ircMsg)
 		//send to Telegram
 		if groupId != 0 {
 			bot.Send(tgbotapi.NewMessage(groupId, ircMsg))
@@ -226,7 +227,7 @@ func goGitterIrcTelegram(conf Config) {
 
 	//Gitter loop
 	if err := gitterCon.Connect(conf.Gitter.Server); err != nil {
-		fmt.Printf("[Gitter] Failed to connect to %v: %v...\n", conf.Gitter.Server, err)
+		log.Printf("[Gitter] Failed to connect to %v: %v...\n", conf.Gitter.Server, err)
 		return
 	}
 	gitterCon.AddCallback("001", func(e *irc.Event) {
@@ -234,7 +235,7 @@ func goGitterIrcTelegram(conf Config) {
 	})
 	gitterCon.AddCallback("JOIN", func(e *irc.Event) {
 		//Gitter welcome message
-		fmt.Printf("[Gitter] Joined channel %v\n", conf.Gitter.Channel)
+		log.Printf("[Gitter] Joined channel %v\n", conf.Gitter.Channel)
 		//ignore when other people join
 		gitterCon.ClearCallback("JOIN")
 	})
@@ -245,14 +246,14 @@ func goGitterIrcTelegram(conf Config) {
 			gitterMsg = e.Message()
 			match, _ := regexp.MatchString("\\[Github\\].+(opened|closed)", gitterMsg) //whitelist
 			if !match {
-				fmt.Printf("[Gitter Status] %v", gitterMsg)
+				log.Printf("[Gitter Status] %v", gitterMsg)
 				return
 			}
 		} else { //normal messages
 			gitterMsg = fmt.Sprintf("<%v> %v", e.Nick, gitterEscape(e.Message()))
 		}
 		//log message
-		fmt.Printf("[Gitter] %v\n", gitterMsg)
+		log.Printf("[Gitter] %v\n", gitterMsg)
 		//send to Telegram
 		if groupId != 0 {
 			tgmsg := tgbotapi.NewMessage(groupId, gitterMsg)
@@ -277,7 +278,7 @@ func goGitterIrcTelegram(conf Config) {
 		for {
 			chat, err := xmppClient.Recv()
 			if err != nil {
-				fmt.Printf("[XMPP] Recv error %v, reconnecting every 3 seconds...\n", err)
+				log.Printf("[XMPP] Recv error %v, reconnecting every 3 seconds...\n", err)
 				xmppClient.Close()
 				for {
 					time.Sleep(3 * time.Second)
@@ -292,7 +293,7 @@ func goGitterIrcTelegram(conf Config) {
 			case xmpp.Chat:
 				if len(v.Text) > 0 && strings.HasPrefix(v.Remote, remotePrefix) && v.Remote != mucRemote {
 					nick := v.Remote[len(remotePrefix):]
-					fmt.Printf("[XMPP] <%s> %s\n", nick, v.Text)
+					log.Printf("[XMPP] <%s> %s\n", nick, v.Text)
 					//send to Telegram
 					if groupId != 0 {
 						bot.Send(tgbotapi.NewMessage(groupId, fmt.Sprintf("<%s> %s", nick, v.Text)))
@@ -311,12 +312,12 @@ func goGitterIrcTelegram(conf Config) {
 		//copy variables
 		message := update.Message
 		if message == nil {
-			fmt.Printf("[Telegram] message == nil\n%v\n", update)
+			log.Printf("[Telegram] message == nil\n%v\n", update)
 			continue
 		}
 		chat := message.Chat
 		if chat == nil {
-			fmt.Printf("[Telegram] chat == nil\n%v\n", update)
+			log.Printf("[Telegram] chat == nil\n%v\n", update)
 			continue
 		}
 		name := message.From.UserName
@@ -328,11 +329,11 @@ func goGitterIrcTelegram(conf Config) {
 			photo := (*message.Photo)[len(*message.Photo)-1]
 			url, err := bot.GetFileDirectURL(photo.FileID)
 			if err != nil {
-				fmt.Printf("GetFileDirectURL error: %v\n", err)
+				log.Printf("GetFileDirectURL error: %v\n", err)
 			} else {
 				url, err = imgurUploadImageByURL(conf.Telegram.ImgurClientId, url)
 				if err != nil {
-					fmt.Printf("imgurUploadImageByURL error: %v\n", err)
+					log.Printf("imgurUploadImageByURL error: %v\n", err)
 				} else {
 					if len(message.Caption) > 0 {
 						message.Text = fmt.Sprintf("%v %v", message.Caption, url)
@@ -346,7 +347,7 @@ func goGitterIrcTelegram(conf Config) {
 			continue
 		}
 		//construct/log message
-		fmt.Printf("[Telegram] <%v> %v\n", name, message.Text)
+		log.Printf("[Telegram] <%v> %v\n", name, message.Text)
 		//check for admin commands
 		if stringInSlice(message.From.UserName, strings.Split(conf.Telegram.Admins, " ")) && strings.HasPrefix(message.Text, "/") {
 			if message.Text == "/start" && (chat.IsGroup() || chat.IsSuperGroup()) {
@@ -366,7 +367,7 @@ func goGitterIrcTelegram(conf Config) {
 			//send to XMPP
 			xmppClient.Send(xmpp.Chat{Remote: conf.XMPP.Muc, Type: "groupchat", Text: message.Text})
 		} else {
-			fmt.Println("[Telegam] Use /start to start the bot...")
+			log.Printf("[Telegam] Use /start to start the bot...\n")
 		}
 	}
 }
@@ -375,7 +376,7 @@ func main() {
 	fmt.Println("Gitter/IRC Sync Bot, written in Go by mrexodia")
 	var conf Config
 	if err := configor.Load(&conf, "config.json"); err != nil {
-		fmt.Printf("Error loading config: %v...\n", err)
+		log.Printf("Error loading config: %v...\n", err)
 		return
 	}
 	goGitterIrcTelegram(conf)
