@@ -356,16 +356,17 @@ func goGitterIrcTelegram(conf Config) {
 				bot.Send(tgbotapi.NewMessage(int64(message.From.ID), fmt.Sprintf("groupId: %v, IRC: %v, Gitter: %v", groupId, ircCon.Connected(), gitterCon.Connected())))
 			}
 		} else if groupId != 0 {
+			telegramMsg := fmt.Sprintf("<%v> %v", name, message.Text)
 			//forward message to group
 			if groupId != chat.ID {
-				bot.Send(tgbotapi.NewMessage(groupId, fmt.Sprintf("<%v> %v", name, message.Text)))
+				bot.Send(tgbotapi.NewMessage(groupId, telegramMsg))
 			}
 			//send to IRC
 			ircPrivMsg(ircCon, conf.IRC.Channel, name, message.Text)
 			//send to Gitter
 			ircPrivMsg(gitterCon, conf.Gitter.Channel, name, message.Text)
 			//send to XMPP
-			xmppClient.Send(xmpp.Chat{Remote: conf.XMPP.Muc, Type: "groupchat", Text: message.Text})
+			xmppClient.Send(xmpp.Chat{Remote: conf.XMPP.Muc, Type: "groupchat", Text: telegramMsg})
 		} else {
 			log.Printf("[Telegam] Use /start to start the bot...\n")
 		}
