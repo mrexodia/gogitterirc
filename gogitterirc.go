@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -96,8 +97,8 @@ func imgurUploadImageByURL(clientID string, imageURL string) (string, error) {
 	if !imgurResponse.Success {
 		return "", errors.New("imgur API returned negative response")
 	}
-	fmt.Println("Image Link: " + imgurResponse.Data.Link)
-	fmt.Println("Deletion Link: http://imgur.com/delete/" + imgurResponse.Data.Deletehash)
+	log.Println("Image Link: " + imgurResponse.Data.Link)
+	log.Println("Deletion Link: http://imgur.com/delete/" + imgurResponse.Data.Deletehash)
 	return imgurResponse.Data.Link, nil
 }
 
@@ -278,10 +279,10 @@ func goGitterIrcTelegram(conf Config) {
 		for {
 			chat, err := xmppClient.Recv()
 			if err != nil {
-				log.Printf("[XMPP] Recv error %v, reconnecting every 3 seconds...\n", err)
+				log.Printf("[XMPP] Recv error %v, reconnecting every 10 seconds...\n", err)
 				xmppClient.Close()
 				for {
-					time.Sleep(3 * time.Second)
+					time.Sleep(10 * time.Second)
 					client, err := initXmppClient(conf)
 					if err == nil {
 						xmppClient = client
@@ -374,7 +375,8 @@ func goGitterIrcTelegram(conf Config) {
 }
 
 func main() {
-	fmt.Println("Gitter/IRC Sync Bot, written in Go by mrexodia")
+	log.SetOutput(os.Stdout)
+	log.Println("Gitter/IRC Sync Bot, written in Go by mrexodia")
 	var conf Config
 	if err := configor.Load(&conf, "config.json"); err != nil {
 		log.Printf("Error loading config: %v...\n", err)
