@@ -297,7 +297,7 @@ func goGitterIrcTelegram(conf Config) {
 					log.Printf("[XMPP] <%s> %s\n", nick, v.Text)
 					//send to Telegram
 					if groupId != 0 {
-						bot.Send(tgbotapi.NewMessage(groupId, fmt.Sprintf("<%s> %s", nick, v.Text)))
+						bot.Send(tgbotapi.NewMessage(groupId, fmt.Sprintf("[%s]: %s", nick, v.Text)))
 					}
 					//send to IRC
 					ircPrivMsg(ircCon, conf.IRC.Channel, nick, v.Text)
